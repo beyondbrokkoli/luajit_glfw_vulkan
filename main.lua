@@ -22,9 +22,7 @@ Engine = {
 -- Loaded dynamically. Handles purely CPU-side physics and ReBAR streaming.
 VibeMath = ffi.load(jit.os == "Windows" and "vibemath" or "./libvibemath.so")
 Config = {
-    -- Switch between "GPU_COMPUTE" and "CPU_AVX2"
---    physics_mode = "GPU_COMPUTE"
-    physics_mode = "CPU_AVX2"
+    physics_mode = "HYBRID" -- We have ascended.
 }
 -- ========================================================
 -- PILLAR 3: THE C-BRIDGE (Injected by main.c)
@@ -119,25 +117,31 @@ end
 function love_load()
     print("[LUA] Booting VibeEngine...")
     Engine.vk_context = vk_core.init()
-    
+
     -- Tell the unified memory manager which reality we are in
     local use_avx2 = (Config.physics_mode == "CPU_AVX2")
     memory.Init(vk, Engine.vk_context, use_avx2)
 
-    -- Setup Descriptors (Always needed so C doesn't crash on null layouts)
-    Engine.vk_descriptors = descriptors.Init(vk, Engine.vk_context.device, memory.Buffers["SwarmA"], memory.Buffers["SwarmB"])
+    -- Setup Descriptors with the Triple Buffer layout
+    Engine.vk_descriptors = descriptors.Init(
+        vk, Engine.vk_context.device,
+        memory.Buffers["SwarmCPU"],
+        memory.Buffers["SwarmPing"],
+        memory.Buffers["SwarmPong"]
+    )
 
     -- Build Pipelines & Hand to C
     local win_width, win_height = C_Bridge.getWindowSize()
     ExecuteVulkanRebuild(win_width, win_height, true)
 
-    -- Handoff GPU Pointers to C
+    -- Handoff 6 GPU Pointers to C
     C_Bridge.submit_buffers(
-        ptr2str(memory.Buffers["SwarmA"]), ptr2str(memory.Buffers["SwarmB"]),
-        ptr2str(memory.Mapped["SwarmA"]), ptr2str(memory.Mapped["SwarmB"])
+        ptr2str(memory.Buffers["SwarmCPU"]), ptr2str(memory.Buffers["SwarmPing"]), ptr2str(memory.Buffers["SwarmPong"]),
+        ptr2str(memory.Mapped["SwarmCPU"]), ptr2str(memory.Mapped["SwarmPing"]), ptr2str(memory.Mapped["SwarmPong"])
     )
-    -- ALWAYS wire up the AVX2 library to memory, because we use it to SEED the VRAM!
-    VibeMath.vmath_bind_vulkan_buffers(memory.Mapped["SwarmA"], nil)
+
+    -- The CPU ALWAYS writes to SwarmCPU now. Never Ping/Pong.
+    VibeMath.vmath_bind_vulkan_buffers(memory.Mapped["SwarmCPU"], nil)
     VibeMath.vmath_bind_engine(memory.RenderStruct, nil, nil)
 
     -- Scatter the particles across the 20,000x20,000 universe so they don't start at (0,0,0)
@@ -205,26 +209,25 @@ function love_update(dt)
     -- ====================================================
     -- THE HYBRID TRAFFIC COP
     -- ====================================================
-    if Config.physics_mode == "CPU_AVX2" then
-        
-        -- Wire the blends directly into the C-Struct just like the old engine!
+    if Config.physics_mode == "HYBRID" then
+        -- 1. Inject Lua logic directly into C-Struct
         local mem = memory.RenderStruct
         mem.Swarm_State = Engine.SwarmState
         mem.Swarm_GravityBlend = Engine.GravityBlend
         mem.Swarm_MetalBlend = Engine.MetalBlend
         mem.Swarm_ParadoxBlend = Engine.ParadoxBlend
 
-        local active_index = frame_count % 2
-        local target_mapped_ptr = (active_index == 0) and memory.Mapped["SwarmA"] or memory.Mapped["SwarmB"]
-
-        VibeMath.vmath_bind_vulkan_buffers(target_mapped_ptr, nil)
+        -- 2. CPU PASS (Macro Physics)
+        -- AVX2 perfectly computes base gravity, collisions, and state morphs into `SwarmCPU`
         VibeMath.vmath_step_swarm(Engine.DrawCount, Engine.Time, dt, Engine.SwarmState, push_active, pull_active)
-        C_Bridge.set_active_buffer(active_index) 
 
-    elseif Config.physics_mode == "GPU_COMPUTE" then
-        -- Send the state to the GPU Compute Shader
-        C_Bridge.set_compute_push_constants(dt, Engine.Time, Engine.SwarmState)
-        C_Bridge.set_active_buffer(-1)
+        -- 3. GPU PASS (Micro Physics & Turbulence)
+        -- Tell the Compute Shader to read `SwarmCPU`, add noise, and write to Ping/Pong natively
+        -- Note: Ensure your set_compute_push_constants in main.c expects these 5 args!
+        C_Bridge.set_compute_push_constants(dt, Engine.Time, Engine.SwarmState, push_active, pull_active)
+        
+        -- 4. Tell Rasterizer to draw the Ping/Pong buffer
+        C_Bridge.set_active_buffer(-1) 
     end
 
     -- Update Camera & Matrices

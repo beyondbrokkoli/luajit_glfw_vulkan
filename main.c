@@ -61,6 +61,9 @@ void* g_mapped_swarm_A = NULL;
 void* g_mapped_swarm_B = NULL;
 void* g_mapped_cage    = NULL;
 
+VkBuffer g_buf_swarm_cpu = VK_NULL_HANDLE;
+void* g_mapped_swarm_cpu = NULL;
+
 // PUSH CONSTANTS (Camera)
 typedef struct {
     float viewProj[16]; // 64 bytes
@@ -110,30 +113,30 @@ void cursor_position_callback(GLFWwindow* window, double xpos, double ypos) {
     lua_State* L = (lua_State*)glfwGetWindowUserPointer(window);
 
     // 1. THE STABLE GUARD: Prevent the camera "snap" on start
-    if (g_first_mouse) { 
-        g_last_mouse_x = xpos; 
-        g_last_mouse_y = ypos; 
-        g_first_mouse = 0; 
+    if (g_first_mouse) {
+        g_last_mouse_x = xpos;
+        g_last_mouse_y = ypos;
+        g_first_mouse = 0;
     }
 
     // 2. THE STABLE CALC: Calculate movement since last frame
     double dx = xpos - g_last_mouse_x;
     double dy = ypos - g_last_mouse_y;
-    g_last_mouse_x = xpos; 
+    g_last_mouse_x = xpos;
     g_last_mouse_y = ypos;
 
     // 3. Dispatch to Lua (identical to your old stable build)
     lua_getglobal(L, "love_mousemoved");
     if (lua_isfunction(L, -1)) {
-        lua_pushnumber(L, xpos); 
-        lua_pushnumber(L, ypos); 
+        lua_pushnumber(L, xpos);
+        lua_pushnumber(L, ypos);
         lua_pushnumber(L, dx);   // Send the DELTA
         lua_pushnumber(L, dy);   // Send the DELTA
-        if (lua_pcall(L, 4, 0, 0) != LUA_OK) { 
-            printf("[LUA ERROR] %s\n", lua_tostring(L, -1)); 
+        if (lua_pcall(L, 4, 0, 0) != LUA_OK) {
+            printf("[LUA ERROR] %s\n", lua_tostring(L, -1));
         }
-    } else { 
-        lua_pop(L, 1); 
+    } else {
+        lua_pop(L, 1);
     }
 }
 // ========================================================
@@ -259,41 +262,24 @@ static int l_set_swapchain_asset(lua_State* L) {
     }
     return 0;
 }
-#define BUFFER_DEBUG 1
-#if BUFFER_DEBUG
 // [BRIDGE] 4. Buffer Handoff
 static int l_submit_buffers(lua_State* L) {
-    // Safety check: Prevent segfaults if Lua sends nil!
-    if (!lua_isstring(L, 1) || !lua_isstring(L, 2) || !lua_isstring(L, 3) || !lua_isstring(L, 4)) {
-        printf("[FATAL] l_submit_buffers expected 4 string arguments!\n");
+    if (lua_gettop(L) < 6) {
+        printf("[FATAL] l_submit_buffers expected 6 string arguments!\n");
         return 0;
     }
 
-    g_buf_swarm_A    = (VkBuffer)strtoull(lua_tostring(L, 1), NULL, 10);
-    g_buf_swarm_B    = (VkBuffer)strtoull(lua_tostring(L, 2), NULL, 10);
-    
-    g_mapped_swarm_A = (void*)strtoull(lua_tostring(L, 3), NULL, 10);
-    g_mapped_swarm_B = (void*)strtoull(lua_tostring(L, 4), NULL, 10);
+    g_buf_swarm_cpu = (VkBuffer)strtoull(lua_tostring(L, 1), NULL, 10);
+    g_buf_swarm_A   = (VkBuffer)strtoull(lua_tostring(L, 2), NULL, 10); // Ping
+    g_buf_swarm_B   = (VkBuffer)strtoull(lua_tostring(L, 3), NULL, 10); // Pong
 
-    printf("[C BRIDGE] GPU Buffers safely locked via 64-bit strings.\n");
+    g_mapped_swarm_cpu = (void*)strtoull(lua_tostring(L, 4), NULL, 10);
+    g_mapped_swarm_A   = (void*)strtoull(lua_tostring(L, 5), NULL, 10);
+    g_mapped_swarm_B   = (void*)strtoull(lua_tostring(L, 6), NULL, 10);
+
+    printf("[C BRIDGE] Triple GPU Buffers safely locked via 64-bit strings.\n");
     return 0;
 }
-#else
-// [BRIDGE] 4. Buffer Handoff (Update your existing one to this!)
-static int l_submit_buffers(lua_State* L) {
-    g_buf_swarm_A    = (VkBuffer)strtoull(lua_tostring(L, 1), NULL, 10);
-    g_buf_swarm_B    = (VkBuffer)strtoull(lua_tostring(L, 2), NULL, 10);
-    g_buf_cage       = (VkBuffer)strtoull(lua_tostring(L, 3), NULL, 10);
-
-    g_mapped_swarm_A = (void*)strtoull(lua_tostring(L, 4), NULL, 10);
-    g_mapped_swarm_B = (void*)strtoull(lua_tostring(L, 5), NULL, 10);
-    g_mapped_cage    = (void*)strtoull(lua_tostring(L, 6), NULL, 10);
-
-    printf("[C BRIDGE] GPU Buffers safely locked via 64-bit strings.\n");
-    return 0;
-}
-#endif
-
 // [BRIDGE] 5. Camera Matrix
 static int l_setCameraMatrix(lua_State* L) {
     for (int i = 0; i < 16; i++) {

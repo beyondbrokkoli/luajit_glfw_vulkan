@@ -168,8 +168,10 @@ function Memory.Init(vulkan_lib, core_state, use_avx2)
     print("[MEMORY] Initializing Unified Memory Manager...")
 
     -- A. ALLOCATE VRAM
-    Memory.CreateHostVisibleBuffer("SwarmA", "GPU_VertexAoS", MAX_OBJS, 160, core_state)
-    Memory.CreateHostVisibleBuffer("SwarmB", "GPU_VertexAoS", MAX_OBJS, 160, core_state)
+-- A. ALLOCATE VRAM
+    Memory.CreateHostVisibleBuffer("SwarmCPU", "GPU_VertexAoS", MAX_OBJS, 160, core_state) -- The new CPU Input
+    Memory.CreateHostVisibleBuffer("SwarmPing", "GPU_VertexAoS", MAX_OBJS, 160, core_state) -- Old SwarmA
+    Memory.CreateHostVisibleBuffer("SwarmPong", "GPU_VertexAoS", MAX_OBJS, 160, core_state) -- Old SwarmB
     Memory.CreateHostVisibleBuffer("Cage", "GPU_GlobalCage", 1, 16, core_state)
 
     -- B. ALLOCATE CPU RAM (Always required for seeding the universe!)
