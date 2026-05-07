@@ -209,31 +209,32 @@ function love_update(dt)
     -- ====================================================
     -- THE HYBRID TRAFFIC COP
     -- ====================================================
+    -- 1. CPU ALWAYS computes the base physics into SwarmCPU
+    local mem = memory.RenderStruct
+    mem.Swarm_State = Engine.SwarmState
+    mem.Swarm_GravityBlend = Engine.GravityBlend
+    mem.Swarm_MetalBlend = Engine.MetalBlend
+    mem.Swarm_ParadoxBlend = Engine.ParadoxBlend
+
+    VibeMath.vmath_step_swarm(Engine.DrawCount, Engine.Time, dt, Engine.SwarmState, push_active, pull_active)
+
     if Config.physics_mode == "HYBRID" then
-        -- 1. Inject Lua logic directly into C-Struct
-        local mem = memory.RenderStruct
-        mem.Swarm_State = Engine.SwarmState
-        mem.Swarm_GravityBlend = Engine.GravityBlend
-        mem.Swarm_MetalBlend = Engine.MetalBlend
-        mem.Swarm_ParadoxBlend = Engine.ParadoxBlend
-
-        -- 2. CPU PASS (Macro Physics)
-        -- AVX2 perfectly computes base gravity, collisions, and state morphs into `SwarmCPU`
-        VibeMath.vmath_step_swarm(Engine.DrawCount, Engine.Time, dt, Engine.SwarmState, push_active, pull_active)
-
-        -- 3. GPU PASS (Micro Physics & Turbulence)
-        -- Tell the Compute Shader to read `SwarmCPU`, add noise, and write to Ping/Pong natively
-        -- Note: Ensure your set_compute_push_constants in main.c expects these 5 args!
+        -- 2a. HYBRID MODE: Dispatch GPU Compute to read SwarmCPU, add noise, and write to Ping/Pong
         C_Bridge.set_compute_push_constants(dt, Engine.Time, Engine.SwarmState, push_active, pull_active)
-        
-        -- 4. Tell Rasterizer to draw the Ping/Pong buffer
-        C_Bridge.set_active_buffer(-1) 
+
+        -- Tell Rasterizer to draw the GPU's finished Ping/Pong buffer (-1)
+        C_Bridge.set_active_buffer(-1)
+
+    elseif Config.physics_mode == "CPU_AVX2" then
+        -- 2b. PURE CPU MODE: Skip the GPU Compute Shader entirely!
+        -- Tell Rasterizer to draw the raw ReBAR SwarmCPU buffer directly (2)
+        C_Bridge.set_active_buffer(2)
     end
 
     -- Update Camera & Matrices
     camera_math.apply_movement(cam_state, dt)
     camera_math.build_matrix(cam_state, Engine.vk_swapchain.extent.width, Engine.vk_swapchain.extent.height)
-    
+
     -- Update Camera & Matrices
     camera_math.apply_movement(cam_state, dt)
     camera_math.build_matrix(cam_state, Engine.vk_swapchain.extent.width, Engine.vk_swapchain.extent.height)
