@@ -27,38 +27,52 @@ uint pcg_hash(uint seed) {
     uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
     return (word >> 22u) ^ word;
 }
-
 void main() {
     uint id = gl_GlobalInvocationID.x;
     if (id >= 2500000) return;
 
-    // 1. Start with the CPU's raw mathematical position
+    // 1. Read the pure math from the CPU (Smale's Paradox)
     vec3 pos = vec3(inParticles[id].x, inParticles[id].y, inParticles[id].z);
 
-    // 2. GPU Decoration: High-frequency "Vibration" or Noise
-    // We use the ID and time to create a unique wobble for every particle
-    uint h = pcg_hash(id);
-    float rand1 = float(h & 0xFFFF) / 65535.0;
-    float uniqueOffset = rand1 * 6.28318;
+    // ====================================================
+    // 2. THE OBVIOUS GPU DECORATION (The Tornado Twist)
+    // ====================================================
     
-    // Add a tiny trigonometric jitter that only the GPU can do efficiently
-    float intensity = 15.0; 
-    pos.x += sin(pc.time * 3.0 + uniqueOffset) * intensity;
-    pos.y += cos(pc.time * 2.5 + uniqueOffset) * intensity;
-    pos.z += sin(pc.time * 4.0 + uniqueOffset) * intensity;
+    // Calculate how far the particle is from the center (X/Z plane)
+    float dist = length(pos.xz);
 
-    // 3. Interactive Physics (The Mouse Hooks)
-    // Left-Click: Expand the paradox structure outward
+    // Create a twisting angle based on the particle's Height (Y) and Time
+    // The higher the particle, the more it twists!
+    float angle = (pos.y * 0.0002) + (pc.time * 2.0);
+    float s = sin(angle);
+    float c = cos(angle);
+
+    // Apply a 2D Rotation Matrix to X and Z
+    float twistedX = pos.x * c - pos.z * s;
+    float twistedZ = pos.x * s + pos.z * c;
+    
+    pos.x = twistedX;
+    pos.z = twistedZ;
+
+    // 3. Add a massive "Heartbeat" pulse expanding outward
+    // The sine wave travels outward based on distance from the center
+    float pulse = 1.0 + (sin(pc.time * 8.0 - (dist * 0.002)) * 0.4); 
+    pos *= pulse;
+
+    // ====================================================
+    // 4. OBVIOUS MOUSE INTERACTION
+    // ====================================================
+    // Left Click: Explode the swarm to 2x size
     if (pc.push == 1) {
-        pos *= 1.1; 
+        pos *= 2.0; 
     }
     
-    // Right-Click: Pull everything toward the center (Vortex mode)
+    // Right Click: Flatten the Swarm into a disc on the floor
     if (pc.pull == 1) {
-        pos *= 0.9;
+        pos.y *= 0.05; 
     }
 
-    // 4. Final Output
+    // Write the mutilated coordinates to the Rasterizer Buffer
     outParticles[id].x = pos.x;
     outParticles[id].y = pos.y;
     outParticles[id].z = pos.z;

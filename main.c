@@ -946,9 +946,9 @@ int main() {
         }
         else {
             // MODE: GPU_COMPUTE / HYBRID (Lua called set_active_buffer(-1))
-            // The Compute shader reads from SwarmCPU and writes to A or B.
-            // We draw the buffer that was just written to.
-            vertexBuffer = (frameIndex % 2 == 0) ? g_buf_swarm_B : g_buf_swarm_A;
+            // The Compute shader reads from SwarmCPU and writes to A (Even) or B (Odd).
+            // We draw the exact buffer we just finished computing!
+            vertexBuffer = (frameIndex % 2 == 0) ? g_buf_swarm_A : g_buf_swarm_B;
         }
 
         VkDeviceSize offsets[] = {0};
