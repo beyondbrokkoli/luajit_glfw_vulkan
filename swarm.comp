@@ -25,35 +25,35 @@ uint pcg_hash(uint seed) {
 
 void main() {
     uint id = gl_GlobalInvocationID.x;
-    if (id >= 1000000) return; // Matches your current Engine.DrawCount
+    
+    // Safety Guardrail: Matches your Lua DrawCount
+    if (id >= 1000000) return; 
 
+    // Read the exact, pristine output from your AVX2 threads
     vec3 pos = vec3(inParticles[id].x, inParticles[id].y, inParticles[id].z);
 
+    // ====================================================
+    // THE GPU GRAVITY TRIGGERS (Mouse Logic Only)
+    // ====================================================
     uint h = pcg_hash(id);
-    float rand1 = float(h & 0xFFFF) / 65535.0;
     float rand2 = float((h >> 16) & 0xFFFF) / 65535.0;
-
-    float uniqueOffset = rand1 * 6.28318; 
-    
-    float noise_intensity = 800.0; 
-    pos.x += sin(pc.time * 12.0 + uniqueOffset) * noise_intensity;
-    pos.y += cos(pc.time * 10.0 + uniqueOffset) * noise_intensity;
-    pos.z += sin(pc.time * 14.0 + uniqueOffset) * noise_intensity;
-
     vec3 center = vec3(0.0, 5000.0, 0.0);
     
     if (pc.push == 1) {
+        // Explode outward from the center
         vec3 dir = normalize(pos - center);
         pos += dir * (rand2 * 800.0); 
     }
     if (pc.pull == 1) {
+        // Implode toward the center
         pos = mix(pos, center, 0.1); 
     }
 
+    // Write the clean, un-wobbled coordinates to the Rasterizer
     outParticles[id].x = pos.x;
     outParticles[id].y = pos.y;
     outParticles[id].z = pos.z;
 
-    // THE FIX: Always pass the CPU thread ID through perfectly. No color overrides!
+    // Pass the CPU thread ID through perfectly for the Catppuccin colors
     outParticles[id].pad = inParticles[id].pad; 
 }
