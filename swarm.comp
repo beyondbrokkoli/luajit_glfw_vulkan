@@ -1,0 +1,57 @@
+#version 450
+
+layout(local_size_x = 256) in;
+
+struct Particle {
+    float x, y, z, pad; 
+};
+
+layout(std430, binding = 0) readonly buffer InSwarm { Particle inParticles[]; };
+layout(std430, binding = 1) writeonly buffer OutSwarm { Particle outParticles[]; };
+
+layout(push_constant) uniform PushConstants {
+    float dt;
+    float time;
+    int state;
+} pc;
+
+uint pcg_hash(uint seed) {
+    uint state = seed * 747796405u + 2891336453u;
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+void main() {
+    uint id = gl_GlobalInvocationID.x;
+    if (id >= 2500000) return;
+
+    vec3 pos = vec3(inParticles[id].x, inParticles[id].y, inParticles[id].z);
+
+    uint h = pcg_hash(id);
+    float rand1 = float(h & 0xFFFF) / 65535.0;         
+    float rand2 = float((h >> 16) & 0xFFFF) / 65535.0; 
+
+    float uniqueOffset = rand1 * 6.28318;
+    float speed = 0.5 + rand2 * 1.5;
+    float t = pc.time * speed + uniqueOffset;
+
+    // THE FIX: Massive VibeEngine Scale Multipliers!
+    vec3 target = vec3(
+        sin(t) * 10000.0,
+        cos(t * 0.8) * 5000.0,
+        sin(t * 1.2) * 10000.0
+    );
+
+    if (pc.state == 1 && (id % 10 == 0)) {
+        target = vec3(15000.0, 5000.0, 0.0);
+        target.y += sin(pc.time * 5.0 - float(id)) * 4000.0;
+    }
+
+    // Fast Lerp
+    pos += (target - pos) * pc.dt * 2.0;
+
+    outParticles[id].x = pos.x;
+    outParticles[id].y = pos.y;
+    outParticles[id].z = pos.z;
+    outParticles[id].pad = 0.0;
+}
