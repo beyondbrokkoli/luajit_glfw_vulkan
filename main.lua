@@ -1,4 +1,4 @@
-local ffi = require("ffi")
+Drlocal ffi = require("ffi")
 local DebugProxy = require("debug_proxy")
 local vk_core = require("vulkan_core")
 local camera_math = require("camera")
@@ -143,7 +143,7 @@ function love_load()
     VibeMath.vmath_bind_engine(memory.RenderStruct, nil, nil)
 
     -- Scatter the particles across the 20,000x20,000 universe
-    VibeMath.vmath_seed_swarm(2500000)
+    VibeMath.vmath_seed_swarm(1000000)
     print("[INIT] VRAM Seeded with 2.5M Particles.")
 
     if use_avx2 then

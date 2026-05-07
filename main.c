@@ -82,7 +82,7 @@ typedef struct {
 // HYBRID ENGINE STATE (Managed by Lua)
 // ========================================================
 int g_force_draw_buffer = -1; // -1 = GPU Ping-Pong, 0 = Force SwarmA, 1 = Force SwarmB
-uint32_t g_draw_count = 2500000;
+uint32_t g_draw_count = 1000000;
 uint32_t g_vertex_count = 12; // Default to Tetrahedron
 
 // Compute Shader Push Constants
