@@ -251,7 +251,15 @@ end
 function love_keypressed(key)
     if key == 256 then -- Escape
         print("[LUA] Escape detected. Signaling C to stop the loop...")
-        C_Bridge.signal_quit() 
+        C_Bridge.signal_quit()
+    elseif key == 72 then -- 'H' Key
+        if Config.physics_mode == "HYBRID" then
+            Config.physics_mode = "CPU_AVX2"
+            print("[ENGINE] Mode Swapped: PURE CPU (Raw Smale's Paradox)")
+        else
+            Config.physics_mode = "HYBRID"
+            print("[ENGINE] Mode Swapped: HYBRID (CPU Paradox + GPU Turbulence)")
+        end
     end
 end
 function love_quit()
