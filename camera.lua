@@ -6,9 +6,9 @@ local function create_state()
     return {
         x = 0.0, y = 7000.0, z = 25000.0,
         yaw = -90.0, pitch = 0.0,
-        
+
         -- Bumped speed to 10000.0 for massive universe traversal!
-        fov = 60.0, zNear = 0.1, sensitivity = 0.1, speed = 10000.0,
+        fov = 60.0, zNear = 0.1, sensitivity = 0.1, speed = 200000.0,
         mat = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1}
     }
 end

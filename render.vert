@@ -7,7 +7,7 @@ layout(location = 1) out float vDiffuse;
 layout(location = 2) out vec3 vBaseColor; 
 
 // THE FIX: Much larger geometry (Was 48.0)
-const float size = 240.0; 
+const float size = 1240.0; 
 
 const vec3 corners[6] = vec3[](
     vec3(0.0, size, 0.0), vec3(0.0, -size, 0.0), vec3(size, 0.0, 0.0), 
