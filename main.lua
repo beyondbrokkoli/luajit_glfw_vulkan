@@ -1,4 +1,4 @@
-Drlocal ffi = require("ffi")
+local ffi = require("ffi")
 local DebugProxy = require("debug_proxy")
 local vk_core = require("vulkan_core")
 local camera_math = require("camera")
