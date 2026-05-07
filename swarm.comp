@@ -17,7 +17,6 @@ layout(push_constant) uniform PushConstants {
     int pull;
 } pc;
 
-// The classic PCG Hash for fast GPU pseudo-randomness
 uint pcg_hash(uint seed) {
     uint state = seed * 747796405u + 2891336453u;
     uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
@@ -26,60 +25,35 @@ uint pcg_hash(uint seed) {
 
 void main() {
     uint id = gl_GlobalInvocationID.x;
-    if (id >= 1000000) return;
+    if (id >= 1000000) return; // Matches your current Engine.DrawCount
 
-    // 1. Read the exact 64-bit aligned output from your AVX2 CPU threads!
     vec3 pos = vec3(inParticles[id].x, inParticles[id].y, inParticles[id].z);
 
-    // ====================================================
-    // 2. THE ORGANIC VIBE (GPU Noise Decoration)
-    // ====================================================
-    // Generate a unique, deterministic random seed for this exact particle
     uint h = pcg_hash(id);
-    
-    // Extract two random float ranges [0.0, 1.0] from the hash
     float rand1 = float(h & 0xFFFF) / 65535.0;
     float rand2 = float((h >> 16) & 0xFFFF) / 65535.0;
 
-    // Create a time-based sine wave that is unique to this particle
-    float uniqueOffset = rand1 * 6.28318; // 2 * PI
+    float uniqueOffset = rand1 * 6.28318; 
     
-    // THE FIX: Crank the vibration intensity to 800!
-    // Now you will SEE the GPU working without having to click.
     float noise_intensity = 800.0; 
     pos.x += sin(pc.time * 12.0 + uniqueOffset) * noise_intensity;
     pos.y += cos(pc.time * 10.0 + uniqueOffset) * noise_intensity;
     pos.z += sin(pc.time * 14.0 + uniqueOffset) * noise_intensity;
 
-    // ====================================================
-    // 3. THE GPU GRAVITY TRIGGERS (Mouse Logic)
-    // ====================================================
-    // We keep this "in line" with the CPU swarm by maintaining the center of mass
     vec3 center = vec3(0.0, 5000.0, 0.0);
     
     if (pc.push == 1) {
-        // Explode outward from the center, but retain the general shape
         vec3 dir = normalize(pos - center);
         pos += dir * (rand2 * 800.0); 
     }
-    
     if (pc.pull == 1) {
-        // Implode! Violently collapse toward the center
         pos = mix(pos, center, 0.1); 
     }
 
-    // Write the decorated coordinates to the Rasterizer Buffer
     outParticles[id].x = pos.x;
     outParticles[id].y = pos.y;
     outParticles[id].z = pos.z;
 
-    // THE THREAD PIPELINE: 
-    // Pass the CPU's thread ID through, OR let the GPU override it!
-    if (pc.pull == 1) {
-        outParticles[id].pad = 5.0; // GPU Overwrite (Purple Vortex)
-    } else if (pc.push == 1) {
-        outParticles[id].pad = 6.0; // GPU Overwrite (Cyan Explosion)
-    } else {
-        outParticles[id].pad = inParticles[id].pad; // Pass CPU Thread ID
-    }
+    // THE FIX: Always pass the CPU thread ID through perfectly. No color overrides!
+    outParticles[id].pad = inParticles[id].pad; 
 }

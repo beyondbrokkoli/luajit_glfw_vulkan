@@ -4,9 +4,11 @@ layout(push_constant) uniform CameraInfo { mat4 viewProj; } pc;
 
 layout(location = 0) out flat int vThreadID;
 layout(location = 1) out float vDiffuse;
-layout(location = 2) out vec3 vBaseColor; // Pass the random color!
+layout(location = 2) out vec3 vBaseColor; 
 
-const float size = 128.0; 
+// THE FIX: Much larger geometry (Was 48.0)
+const float size = 120.0; 
+
 const vec3 corners[6] = vec3[](
     vec3(0.0, size, 0.0), vec3(0.0, -size, 0.0), vec3(size, 0.0, 0.0), 
     vec3(0.0, 0.0, size), vec3(-size, 0.0, 0.0), vec3(0.0, 0.0, -size)
@@ -15,13 +17,17 @@ const int lut[24] = int[](
     0, 2, 3,  0, 3, 4,  0, 4, 5,  0, 5, 2, 
     1, 3, 2,  1, 4, 3,  1, 5, 4,  1, 2, 5
 );
+
+// Soft Catppuccin underlying tints
 const vec3 baseColors[3] = vec3[](
-    vec3(0.2, 1.0, 0.5), vec3(0.2, 0.5, 1.0), vec3(1.0, 0.2, 0.5)
+    vec3(0.95, 0.80, 0.80), // Flamingo
+    vec3(0.80, 0.85, 0.95), // Lavender
+    vec3(0.95, 0.95, 0.85)  // Rosewater
 );
 
 void main() {
     vThreadID = int(inPosition.w);
-    vBaseColor = baseColors[gl_InstanceIndex % 3]; // The organic diverse color!
+    vBaseColor = baseColors[gl_InstanceIndex % 3]; 
 
     int cornerIndex = lut[gl_VertexIndex % 24];
     int faceIndex = (gl_VertexIndex % 24) / 3;

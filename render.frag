@@ -8,15 +8,13 @@ layout(location = 0) out vec4 outColor;
 void main() {
     vec3 finalColor = vBaseColor;
 
-    // TINT the particle based on the AVX2 Thread that calculated it
-    if (vThreadID == 0) finalColor *= vec3(1.5, 0.5, 0.5); // Thread 0: Warmer
-    if (vThreadID == 1) finalColor *= vec3(0.5, 1.5, 0.5); // Thread 1: Greener
-    if (vThreadID == 2) finalColor *= vec3(0.5, 0.5, 1.5); // Thread 2: Bluer
-    if (vThreadID == 3) finalColor *= vec3(1.5, 1.5, 0.5); // Thread 3: Yellower
+    // THE CATPPUCCIN MOCHA PALETTE (Modern Linux WM Theme)
+    // Tinting the soft pastel base colors with bold thread identifiers
+    if (vThreadID == 0) finalColor *= vec3(0.80, 0.65, 0.97); // Mauve (Purple)
+    if (vThreadID == 1) finalColor *= vec3(0.45, 0.78, 0.92); // Sapphire (Blue)
+    if (vThreadID == 2) finalColor *= vec3(0.65, 0.89, 0.63); // Green (Mint)
+    if (vThreadID == 3) finalColor *= vec3(0.98, 0.70, 0.53); // Peach (Orange)
 
-    // Overrides for the GPU Intercept (Mouse Clicks)
-    if (vThreadID == 5) finalColor = vec3(1.0, 0.0, 1.0); // Purple Pull
-    if (vThreadID == 6) finalColor = vec3(0.0, 1.0, 1.0); // Cyan Push
-
+    // Apply the faux-3D lighting we calculated in the Vertex Shader
     outColor = vec4(finalColor * vDiffuse, 1.0);
 }
