@@ -150,7 +150,9 @@ function GraphicsPipeline.Init(vk, core_state, width, height)
     ffi.fill(attrDesc, ffi.sizeof(attrDesc))
     attrDesc[0].binding = 0
     attrDesc[0].location = 0
-    attrDesc[0].format = 106 -- VK_FORMAT_R32G32B32A32_SFLOAT
+    -- attrDesc[0].format = 106 -- VK_FORMAT_R32G32B32A32_SFLOAT
+    -- Change format 106 (RGB) to 109 (RGBA)
+    attrDesc[0].format = 109 -- VK_FORMAT_R32G32B32A32_SFLOAT
     attrDesc[0].offset = 0
 
     local vertexInputInfo = ffi.new("VkPipelineVertexInputStateCreateInfo")

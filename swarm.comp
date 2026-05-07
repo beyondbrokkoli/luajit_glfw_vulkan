@@ -77,4 +77,13 @@ void main() {
     outParticles[id].y = pos.y;
     outParticles[id].z = pos.z;
     outParticles[id].pad = 0.0;
+    // THE THREAD PIPELINE: 
+    if (pc.pull == 1) {
+        outParticles[id].pad = 5.0; // GPU Overwrite (Purple Vortex)
+    } else if (pc.push == 1) {
+        outParticles[id].pad = 6.0; // GPU Overwrite (Cyan Explosion)
+    } else {
+        // Pass the CPU's AVX2 Thread ID through untouched!
+        outParticles[id].pad = inParticles[id].pad;
+    }
 }
