@@ -119,7 +119,7 @@ function love_load()
     Engine.vk_context = vk_core.init()
 
     -- Tell the unified memory manager which reality we are in
-    local use_avx2 = (Config.physics_mode == "CPU_AVX2")
+    local use_avx2 = (Config.physics_mode == "CPU_AVX2" or Config.physics_mode == "HYBRID")
     memory.Init(vk, Engine.vk_context, use_avx2)
 
     -- Setup Descriptors with the Triple Buffer layout

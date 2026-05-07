@@ -70,6 +70,13 @@ typedef struct {
 } CameraPushConstants;
 
 CameraPushConstants g_cam_pc = {0};
+typedef struct {
+    float dt;
+    float time;
+    int state;
+    int push;
+    int pull;
+} ComputePushConstants;
 // ========================================================
 // HYBRID ENGINE STATE (Managed by Lua)
 // ========================================================
@@ -80,6 +87,8 @@ uint32_t g_draw_count = 2500000;
 float g_comp_dt = 0.016f;
 float g_comp_time = 0.0f;
 int g_comp_state = 1;
+int g_comp_push = 0;
+int g_comp_pull = 0;
 
 // CROSS-PLATFORM SOCKETS
 #ifdef _WIN32
@@ -145,7 +154,7 @@ void cursor_position_callback(GLFWwindow* window, double xpos, double ypos) {
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
     // Prevent rendering/rebuilding if minimized
-    if (width == 0 || height == 0) return; 
+    if (width == 0 || height == 0) return;
 
     lua_State* L = (lua_State*)glfwGetWindowUserPointer(window);
     if (!L) return;
@@ -170,7 +179,7 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
         if (!L) return;
 
         const char* func_name = (action == GLFW_PRESS) ? "love_keypressed" : "love_keyreleased";
-        
+
         lua_getglobal(L, func_name);
         if (lua_isfunction(L, -1)) {
             lua_pushinteger(L, key); // Pass raw GLFW_KEY integer to Lua
@@ -200,23 +209,23 @@ static int l_quit_engine(lua_State* L) {
 static int l_inject_validation_layers(lua_State* L) {
     // 1. Catch the string from Lua and turn it back into a 64-bit pointer
     VkInstance instance = (VkInstance)(uintptr_t)strtoull(lua_tostring(L, 1), NULL, 10);
-    
+
     // 2. Configure the Bouncer
     VkDebugUtilsMessengerCreateInfoEXT createInfo = {0};
     createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-    createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | 
-                                 VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | 
+    createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+                                 VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
                                  VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-    createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | 
-                             VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | 
+    createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                             VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
                              VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
     createInfo.pfnUserCallback = vulkan_debug_callback;
     createInfo.pUserData = NULL;
 
     // 3. Load the extension function dynamically
-    PFN_vkCreateDebugUtilsMessengerEXT func = (PFN_vkCreateDebugUtilsMessengerEXT) 
+    PFN_vkCreateDebugUtilsMessengerEXT func = (PFN_vkCreateDebugUtilsMessengerEXT)
         vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
-    
+
     // 4. Activate the Bouncer
     if (func != NULL) {
         func(instance, &createInfo, NULL, &g_debugMessenger);
@@ -224,7 +233,7 @@ static int l_inject_validation_layers(lua_State* L) {
     } else {
         printf("[BOOT] Failed to load vkCreateDebugUtilsMessengerEXT!\n");
     }
-    
+
     return 0;
 }
 // [BRIDGE] 1. Core State
@@ -236,7 +245,7 @@ static int l_set_core_handles(lua_State* L) {
     g_imageCount = (uint32_t)lua_tointeger(L, 5);
     g_width      = (uint32_t)lua_tointeger(L, 6);
     g_height     = (uint32_t)lua_tointeger(L, 7);
-    
+
     printf("[C BRIDGE] Rebuilt VkDevice: %p\n", (void*)g_device); fflush(stdout);
     return 0;
 }
@@ -304,17 +313,17 @@ static int l_isMouseDown(lua_State* L) {
 
 static int l_setRelativeMode(lua_State* L) {
     int enable = lua_toboolean(L, 1);
-    
+
     // GLFW_CURSOR_DISABLED hides the mouse and locks it to the window
     glfwSetInputMode(g_window, GLFW_CURSOR, enable ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
-    
+
     // Reset trackers so the next movement starts from zero
     if (enable) {
         double x, y;
         glfwGetCursorPos(g_window, &x, &y);
         g_last_mouse_x = x;
         g_last_mouse_y = y;
-        g_first_mouse = 0; 
+        g_first_mouse = 0;
     }
     return 0;
 }
@@ -498,6 +507,8 @@ static int l_set_compute_push_constants(lua_State* L) {
     g_comp_dt    = (float)luaL_checknumber(L, 1);
     g_comp_time  = (float)luaL_checknumber(L, 2);
     g_comp_state = (int)luaL_checkinteger(L, 3);
+    g_comp_push  = (int)luaL_checkinteger(L, 4); // Added!
+    g_comp_pull  = (int)luaL_checkinteger(L, 5); // Added!
     return 0;
 }
 
@@ -521,7 +532,7 @@ int main() {
     if (!glfwInit()) return -1; // Standard GLFW safety
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    
+
     // 1. Target the primary monitor for Exclusive Fullscreen
     GLFWmonitor* monitor = glfwGetPrimaryMonitor();
     const GLFWvidmode* mode = glfwGetVideoMode(monitor);
@@ -623,7 +634,7 @@ int main() {
     // THE NAKED DISPATCHER
     // ========================================================
     printf("[C DEBUG] 0. Extracting raw AMD driver functions...\n"); fflush(stdout);
-    
+
     #define LOAD_VK(func) PFN_##func pfn_##func = (PFN_##func)vkGetDeviceProcAddr(g_device, #func); \
                           if (!pfn_##func) { printf("[FATAL] Missing %s\n", #func); fflush(stdout); return -1; }
 
@@ -691,14 +702,14 @@ int main() {
     pfn_vkAllocateCommandBuffers(g_device, &allocInfo, commandBuffers);
 
     printf("[C DEBUG] 3. Creating Sync Objects...\n"); fflush(stdout);
-    
+
     #define MAX_SWAPCHAIN_IMAGES 10 // Safe upper limit for any OS compositor
 
     VkSemaphore imageAvailableSemaphores[MAX_FRAMES_IN_FLIGHT];
     VkFence inFlightFences[MAX_FRAMES_IN_FLIGHT];
-    
+
     // [FIX 1] Restore this to an independent pool tied to images!
-    VkSemaphore renderFinishedSemaphores[MAX_SWAPCHAIN_IMAGES]; 
+    VkSemaphore renderFinishedSemaphores[MAX_SWAPCHAIN_IMAGES];
 
     VkSemaphoreCreateInfo semInfo = {0};
     semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -785,7 +796,7 @@ int main() {
             lua_getglobal(L, "love_resize_trigger");
             if (lua_isfunction(L, -1)) {
                 int w, h; glfwGetFramebufferSize(g_window, &w, &h);
-                lua_pushinteger(L, w); 
+                lua_pushinteger(L, w);
                 lua_pushinteger(L, h);
                 lua_pcall(L, 2, 0, 0);
             } else { lua_pop(L, 1); }
@@ -803,7 +814,7 @@ int main() {
         pfn_vkBeginCommandBuffer(cmd, &beginInfo);
 
         // ----------------------------------------------------
-        // PASS A: COMPUTE SHADER (Skip if AVX2 is forcing a buffer!)
+        // PASS A: COMPUTE SHADER (The Simulation Pass)
         // ----------------------------------------------------
         if (g_force_draw_buffer == -1) {
             pfn_vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, g_compPipeline);
@@ -811,14 +822,17 @@ int main() {
             VkDescriptorSet currentSet = (frameIndex % 2 == 0) ? g_compSet0 : g_compSet1;
             pfn_vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, g_compLayout, 0, 1, &currentSet, 0, NULL);
 
-            struct { float dt; float time; int state; } pc;
-            pc.dt    = g_comp_dt;
-            pc.time  = g_comp_time;
-            pc.state = g_comp_state;
+            // 1. Fill the SIMULATION mailbox (20 bytes)
+            ComputePushConstants sim_pc; // Call it sim_pc to avoid confusion with the camera!
+            sim_pc.dt    = g_comp_dt;
+            sim_pc.time  = g_comp_time;
+            sim_pc.state = g_comp_state;
+            sim_pc.push  = g_comp_push;
+            sim_pc.pull  = g_comp_pull;
 
-            pfn_vkCmdPushConstants(cmd, g_compLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(pc), &pc);
+            // 2. Push to the COMPUTE stage using the COMPUTE layout
+            pfn_vkCmdPushConstants(cmd, g_compLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(sim_pc), &sim_pc);
 
-            // Dynamic Dispatch Sizing! (256 is our wavefront workgroup size)
             uint32_t groupCount = (g_draw_count + 255) / 256;
             if (groupCount == 0) groupCount = 1;
             pfn_vkCmdDispatch(cmd, groupCount, 1, 1);
@@ -909,13 +923,26 @@ int main() {
         VkRect2D scissor = {{0, 0}, {g_width, g_height}};
         pfn_vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-        // HYBRID VERTEX BINDING: Ping-Pong OR Forced
+        // ========================================================
+        // HYBRID VERTEX BINDING: The 3-Buffer Logic
+        // ========================================================
         VkBuffer vertexBuffer;
-        if (g_force_draw_buffer != -1) {
-            // AVX2 Mode: Use the forced buffer (0 = Swarm A, 1 = Swarm B)
-            vertexBuffer = (g_force_draw_buffer == 0) ? g_buf_swarm_A : g_buf_swarm_B;
-        } else {
-            // GPU Compute Mode: Read from the buffer that the Compute Shader just finished writing to
+
+        if (g_force_draw_buffer == 2) {
+            // MODE: Pure CPU_AVX2 (Lua called C_Bridge.set_active_buffer(2))
+            // We draw the ReBAR buffer the CPU just finished writing to.
+            vertexBuffer = g_buf_swarm_cpu;
+        }
+        else if (g_force_draw_buffer == 0) {
+            vertexBuffer = g_buf_swarm_A;
+        }
+        else if (g_force_draw_buffer == 1) {
+            vertexBuffer = g_buf_swarm_B;
+        }
+        else {
+            // MODE: GPU_COMPUTE / HYBRID (Lua called set_active_buffer(-1))
+            // The Compute shader reads from SwarmCPU and writes to A or B.
+            // We draw the buffer that was just written to.
             vertexBuffer = (frameIndex % 2 == 0) ? g_buf_swarm_B : g_buf_swarm_A;
         }
 
