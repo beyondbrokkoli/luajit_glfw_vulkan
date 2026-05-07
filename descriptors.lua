@@ -2,8 +2,8 @@ local ffi = require("ffi")
 
 local Descriptors = {}
 
-function Descriptors.Init(vk, device, bufCPU, bufPing, bufPong)
-    print("[DESCRIPTORS] Wiring Triple-Buffer Assembly Line...")
+function Descriptors.Init(vk, device, bufCPU_A, bufCPU_B, bufPing, bufPong)
+    print("[DESCRIPTORS] Wiring Quad-Buffer Assembly Line...")
 
     -- ========================================================
     -- 1. The Descriptor Set Layout (Binding 0 = Read CPU, Binding 1 = Write GPU)
@@ -32,7 +32,7 @@ function Descriptors.Init(vk, device, bufCPU, bufPing, bufPong)
     local computeDescriptorSetLayout = pLayout[0]
 
     -- ========================================================
-    -- 2. Push Constants (WIDENED TO 20 BYTES for Push/Pull)
+    -- 2. Push Constants (20 BYTES for Simulation State & Interaction)
     -- ========================================================
     local computePushRange = ffi.new("VkPushConstantRange[1]")
     ffi.fill(computePushRange, ffi.sizeof(computePushRange))
@@ -70,7 +70,7 @@ function Descriptors.Init(vk, device, bufCPU, bufPing, bufPong)
     poolInfo.sType = 33 -- VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO
     poolInfo.poolSizeCount = 1
     poolInfo.pPoolSizes = poolSize
-    poolInfo.maxSets = 2 -- Two Sets!
+    poolInfo.maxSets = 2 -- Two Sets
 
     local pPool = ffi.new("VkDescriptorPool[1]")
     assert(vk.vkCreateDescriptorPool(device, poolInfo, nil, pPool) == 0)
@@ -91,14 +91,19 @@ function Descriptors.Init(vk, device, bufCPU, bufPing, bufPong)
     assert(vk.vkAllocateDescriptorSets(device, allocSetInfo, pSets) == 0)
 
     -- ========================================================
-    -- 6. Cross-Wire the Buffers into the Sets
+    -- 6. Cross-Wire the Quad-Buffers into the Sets
     -- ========================================================
-    local VK_WHOLE_SIZE = ffi.cast("uint64_t", -1) 
+    local VK_WHOLE_SIZE = ffi.cast("uint64_t", -1)
 
-    local bufInfoCPU = ffi.new("VkDescriptorBufferInfo[1]")
-    bufInfoCPU[0].buffer = bufCPU
-    bufInfoCPU[0].offset = 0
-    bufInfoCPU[0].range = VK_WHOLE_SIZE
+    local bufInfoCPU_A = ffi.new("VkDescriptorBufferInfo[1]")
+    bufInfoCPU_A[0].buffer = bufCPU_A
+    bufInfoCPU_A[0].offset = 0
+    bufInfoCPU_A[0].range = VK_WHOLE_SIZE
+
+    local bufInfoCPU_B = ffi.new("VkDescriptorBufferInfo[1]")
+    bufInfoCPU_B[0].buffer = bufCPU_B
+    bufInfoCPU_B[0].offset = 0
+    bufInfoCPU_B[0].range = VK_WHOLE_SIZE
 
     local bufInfoPing = ffi.new("VkDescriptorBufferInfo[1]")
     bufInfoPing[0].buffer = bufPing
@@ -113,13 +118,13 @@ function Descriptors.Init(vk, device, bufCPU, bufPing, bufPong)
     local writes = ffi.new("VkWriteDescriptorSet[4]")
     ffi.fill(writes, ffi.sizeof(writes))
 
-    -- Set 0: Read CPU (Binding 0), Write Ping (Binding 1)
-    writes[0].sType = 35 
+    -- Set 0 (Even Frames): Compute reads from CPU_A (Binding 0) and writes to Ping (Binding 1)
+    writes[0].sType = 35
     writes[0].dstSet = pSets[0]
     writes[0].dstBinding = 0
     writes[0].descriptorType = 7
     writes[0].descriptorCount = 1
-    writes[0].pBufferInfo = bufInfoCPU
+    writes[0].pBufferInfo = bufInfoCPU_A
 
     writes[1].sType = 35
     writes[1].dstSet = pSets[0]
@@ -128,13 +133,13 @@ function Descriptors.Init(vk, device, bufCPU, bufPing, bufPong)
     writes[1].descriptorCount = 1
     writes[1].pBufferInfo = bufInfoPing
 
-    -- Set 1: Read CPU (Binding 0), Write Pong (Binding 1)
+    -- Set 1 (Odd Frames): Compute reads from CPU_B (Binding 0) and writes to Pong (Binding 1)
     writes[2].sType = 35
     writes[2].dstSet = pSets[1]
     writes[2].dstBinding = 0
     writes[2].descriptorType = 7
     writes[2].descriptorCount = 1
-    writes[2].pBufferInfo = bufInfoCPU
+    writes[2].pBufferInfo = bufInfoCPU_B
 
     writes[3].sType = 35
     writes[3].dstSet = pSets[1]
@@ -145,7 +150,7 @@ function Descriptors.Init(vk, device, bufCPU, bufPing, bufPong)
 
     vk.vkUpdateDescriptorSets(device, 4, writes, 0, nil)
 
-    print("[DESCRIPTORS] Triple-Buffer Sets successfully wired!")
+    print("[DESCRIPTORS] Quad-Buffer Sets successfully wired!")
 
     return {
         setLayout = computeDescriptorSetLayout,

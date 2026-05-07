@@ -61,9 +61,10 @@ void* g_mapped_swarm_A = NULL;
 void* g_mapped_swarm_B = NULL;
 void* g_mapped_cage    = NULL;
 
-VkBuffer g_buf_swarm_cpu = VK_NULL_HANDLE;
-void* g_mapped_swarm_cpu = NULL;
-
+VkBuffer g_buf_swarm_cpu_A = VK_NULL_HANDLE;
+VkBuffer g_buf_swarm_cpu_B = VK_NULL_HANDLE;
+void* g_mapped_swarm_cpu_A = NULL;
+void* g_mapped_swarm_cpu_B = NULL;
 // PUSH CONSTANTS (Camera)
 typedef struct {
     float viewProj[16]; // 64 bytes
@@ -271,24 +272,26 @@ static int l_set_swapchain_asset(lua_State* L) {
     }
     return 0;
 }
-// [BRIDGE] 4. Buffer Handoff
 static int l_submit_buffers(lua_State* L) {
-    if (lua_gettop(L) < 6) {
-        printf("[FATAL] l_submit_buffers expected 6 string arguments!\n");
+    if (lua_gettop(L) < 8) {
+        printf("[FATAL] l_submit_buffers expected 8 string arguments!\n");
         return 0;
     }
 
-    g_buf_swarm_cpu = (VkBuffer)strtoull(lua_tostring(L, 1), NULL, 10);
-    g_buf_swarm_A   = (VkBuffer)strtoull(lua_tostring(L, 2), NULL, 10); // Ping
-    g_buf_swarm_B   = (VkBuffer)strtoull(lua_tostring(L, 3), NULL, 10); // Pong
+    g_buf_swarm_cpu_A = (VkBuffer)strtoull(lua_tostring(L, 1), NULL, 10);
+    g_buf_swarm_cpu_B = (VkBuffer)strtoull(lua_tostring(L, 2), NULL, 10);
+    g_buf_swarm_A     = (VkBuffer)strtoull(lua_tostring(L, 3), NULL, 10); // Ping
+    g_buf_swarm_B     = (VkBuffer)strtoull(lua_tostring(L, 4), NULL, 10); // Pong
 
-    g_mapped_swarm_cpu = (void*)strtoull(lua_tostring(L, 4), NULL, 10);
-    g_mapped_swarm_A   = (void*)strtoull(lua_tostring(L, 5), NULL, 10);
-    g_mapped_swarm_B   = (void*)strtoull(lua_tostring(L, 6), NULL, 10);
+    g_mapped_swarm_cpu_A = (void*)strtoull(lua_tostring(L, 5), NULL, 10);
+    g_mapped_swarm_cpu_B = (void*)strtoull(lua_tostring(L, 6), NULL, 10);
+    g_mapped_swarm_A     = (void*)strtoull(lua_tostring(L, 7), NULL, 10);
+    g_mapped_swarm_B     = (void*)strtoull(lua_tostring(L, 8), NULL, 10);
 
-    printf("[C BRIDGE] Triple GPU Buffers safely locked via 64-bit strings.\n");
+    printf("[C BRIDGE] Quad GPU Buffers safely locked.\n");
     return 0;
 }
+
 // [BRIDGE] 5. Camera Matrix
 static int l_setCameraMatrix(lua_State* L) {
     for (int i = 0; i < 16; i++) {
@@ -928,26 +931,20 @@ int main() {
         VkRect2D scissor = {{0, 0}, {g_width, g_height}};
         pfn_vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-        // ========================================================
-        // HYBRID VERTEX BINDING: The 3-Buffer Logic
-        // ========================================================
-        VkBuffer vertexBuffer;
 
+        // ----------------------------------------------------
+        // THE HYBRID TRAFFIC COP: Which buffer are we drawing?
+        // ----------------------------------------------------
+        VkBuffer vertexBuffer;
         if (g_force_draw_buffer == 2) {
-            // MODE: Pure CPU_AVX2 (Lua called C_Bridge.set_active_buffer(2))
-            // We draw the ReBAR buffer the CPU just finished writing to.
-            vertexBuffer = g_buf_swarm_cpu;
-        }
-        else if (g_force_draw_buffer == 0) {
+            // PURE CPU MODE: Draw the CPU buffer we just finished writing
+            vertexBuffer = (frameIndex % 2 == 0) ? g_buf_swarm_cpu_A : g_buf_swarm_cpu_B;
+        } else if (g_force_draw_buffer == 0) {
             vertexBuffer = g_buf_swarm_A;
-        }
-        else if (g_force_draw_buffer == 1) {
+        } else if (g_force_draw_buffer == 1) {
             vertexBuffer = g_buf_swarm_B;
-        }
-        else {
-            // MODE: GPU_COMPUTE / HYBRID (Lua called set_active_buffer(-1))
-            // The Compute shader reads from SwarmCPU and writes to A (Even) or B (Odd).
-            // We draw the exact buffer we just finished computing!
+        } else {
+            // HYBRID MODE: Draw the GPU buffer we just finished decorating
             vertexBuffer = (frameIndex % 2 == 0) ? g_buf_swarm_A : g_buf_swarm_B;
         }
 
