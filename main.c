@@ -83,6 +83,7 @@ typedef struct {
 // ========================================================
 int g_force_draw_buffer = -1; // -1 = GPU Ping-Pong, 0 = Force SwarmA, 1 = Force SwarmB
 uint32_t g_draw_count = 2500000;
+uint32_t g_vertex_count = 12; // Default to Tetrahedron
 
 // Compute Shader Push Constants
 float g_comp_dt = 0.016f;
@@ -291,7 +292,11 @@ static int l_submit_buffers(lua_State* L) {
     printf("[C BRIDGE] Quad GPU Buffers safely locked.\n");
     return 0;
 }
-
+// [BRIDGE] Set Vertex Count dynamically
+static int l_set_vertex_count(lua_State* L) {
+    g_vertex_count = (uint32_t)luaL_checkinteger(L, 1);
+    return 0;
+}
 // [BRIDGE] 5. Camera Matrix
 static int l_setCameraMatrix(lua_State* L) {
     for (int i = 0; i < 16; i++) {
@@ -607,6 +612,7 @@ int main() {
     lua_pushcfunction(L, l_set_compute_push_constants); lua_setfield(L, -2, "set_compute_push_constants");
     lua_pushcfunction(L, l_set_active_buffer);          lua_setfield(L, -2, "set_active_buffer");
     lua_pushcfunction(L, l_set_draw_count);             lua_setfield(L, -2, "set_draw_count");
+    lua_pushcfunction(L, l_set_vertex_count);           lua_setfield(L, -2, "set_vertex_count");
 
     lua_pushcfunction(L, l_inject_validation_layers); lua_setfield(L, -2, "inject_validation_layers");
 
@@ -954,8 +960,8 @@ int main() {
         // Push the LIVE Camera Matrix from Lua
         pfn_vkCmdPushConstants(cmd, g_gfxLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(CameraPushConstants), &g_cam_pc);
 
-        // Draw 12 vertices per instance, dynamically sized!
-        pfn_vkCmdDraw(cmd, 12, g_draw_count, 0, 0);
+        // Draw dynamically sized geometry!
+        pfn_vkCmdDraw(cmd, g_vertex_count, g_draw_count, 0, 0);
 
         pfn_vkCmdEndRendering(cmd);
 

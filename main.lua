@@ -245,6 +245,7 @@ function love_update(dt)
     C_Bridge.setCameraMatrix(unpack(cam_state.mat))
 
     C_Bridge.set_draw_count(Engine.DrawCount)
+    C_Bridge.set_vertex_count(24)
     return true
 end
 
