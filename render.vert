@@ -6,7 +6,7 @@ layout(location = 0) out flat int vThreadID;
 layout(location = 1) out float vDiffuse;
 layout(location = 2) out vec3 vBaseColor; // Pass the random color!
 
-const float size = 48.0; 
+const float size = 128.0; 
 const vec3 corners[6] = vec3[](
     vec3(0.0, size, 0.0), vec3(0.0, -size, 0.0), vec3(size, 0.0, 0.0), 
     vec3(0.0, 0.0, size), vec3(-size, 0.0, 0.0), vec3(0.0, 0.0, -size)
