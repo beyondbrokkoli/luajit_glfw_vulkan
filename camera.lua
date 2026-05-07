@@ -4,23 +4,20 @@ local math_rad, math_sin, math_cos, math_tan = math.rad, math.sin, math.cos, mat
 -- 1. THE SPAWN POINT
 local function create_state()
     return {
-        -- Step BACK out of the swarm!
         x = 0.0, y = 7000.0, z = 25000.0,
         yaw = -90.0, pitch = 0.0,
-        -- Step BACK out of the swarm!
-        -- x = 0.0, y = 0.0, z = 250.0, 
-        -- yaw = -90.0, pitch = 0.0,
-        -- Bumped speed to 50 so you can fly around the massive cloud faster
-        fov = 60.0, zNear = 0.1, sensitivity = 0.1, speed = 50.0,
-        mat = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1} 
+        
+        -- Bumped speed to 10000.0 for massive universe traversal!
+        fov = 60.0, zNear = 0.1, sensitivity = 0.1, speed = 10000.0,
+        mat = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1}
     }
 end
 
 -- 2. THE INVERTED MOUSE FIX
 local function apply_look(state, dx, dy)
     state.yaw = state.yaw - (dx * state.sensitivity)
-    state.pitch = state.pitch + (dy * state.sensitivity) 
-    
+    state.pitch = state.pitch + (dy * state.sensitivity)
+
     if state.pitch > 89.0 then state.pitch = 89.0 end
     if state.pitch < -89.0 then state.pitch = -89.0 end
 end
@@ -29,22 +26,31 @@ end
 local function apply_movement(state, dt)
     local moveSpeed = state.speed * dt
     local radYaw = math_rad(state.yaw)
-    
+
     -- Planar movement vectors
     local fx, fz = math_cos(radYaw), math_sin(radYaw)
     local rx, rz = math_cos(radYaw - 1.5708), math_sin(radYaw - 1.5708)
 
-    if love.keyboard.isDown("w") then 
-        state.x = state.x + fx * moveSpeed; state.z = state.z + fz * moveSpeed 
+    -- Horizontal Plane (XZ)
+    if love.keyboard.isDown("w") then
+        state.x = state.x + fx * moveSpeed; state.z = state.z + fz * moveSpeed
     end
-    if love.keyboard.isDown("s") then 
-        state.x = state.x - fx * moveSpeed; state.z = state.z - fz * moveSpeed 
+    if love.keyboard.isDown("s") then
+        state.x = state.x - fx * moveSpeed; state.z = state.z - fz * moveSpeed
     end
-    if love.keyboard.isDown("a") then 
-        state.x = state.x - rx * moveSpeed; state.z = state.z - rz * moveSpeed 
+    if love.keyboard.isDown("a") then
+        state.x = state.x - rx * moveSpeed; state.z = state.z - rz * moveSpeed
     end
-    if love.keyboard.isDown("d") then 
-        state.x = state.x + rx * moveSpeed; state.z = state.z + rz * moveSpeed 
+    if love.keyboard.isDown("d") then
+        state.x = state.x + rx * moveSpeed; state.z = state.z + rz * moveSpeed
+    end
+    
+    -- Vertical Axis (Y)
+    if love.keyboard.isDown("q") then
+        state.y = state.y - moveSpeed -- Descend
+    end
+    if love.keyboard.isDown("e") then
+        state.y = state.y + moveSpeed -- Ascend
     end
 end
 
@@ -66,10 +72,9 @@ local function build_matrix(state, width, height)
     local fx = cp * cy;  local fy = sp;  local fz = cp * sy
 
     -- Right (Cross Forward with Vulkan World Up (0, -1, 0))
-    -- Note the signs are swapped from your current rx/rz!
     local rx = sy;       local ry = 0.0; local rz = -cy
 
-    -- Up (Cross Right with Forward) -> THIS WAS THE MATH BUG!
+    -- Up (Cross Right with Forward)
     local ux = ry*fz - rz*fy
     local uy = rz*fx - rx*fz
     local uz = rx*fy - ry*fx
