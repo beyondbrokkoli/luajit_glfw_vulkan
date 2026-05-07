@@ -8,7 +8,7 @@ Engine = {
     Resize = { is_resizing = false, timer = 0.0, cooldown = 0.25, new_width = 0, new_height = 0 },
     vk_context = nil, vk_swapchain = nil, vk_graphics = nil, vk_compute = nil, vk_descriptors = nil,
     Time = 0.0,
-    DrawCount = 2500000,
+    DrawCount = 1000000,
     SwarmState = 0,
     GravityBlend = 1.0,
     MetalBlend = 0.0,
