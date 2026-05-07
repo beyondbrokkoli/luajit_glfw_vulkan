@@ -44,9 +44,9 @@ void main() {
     // Create a time-based sine wave that is unique to this particle
     float uniqueOffset = rand1 * 6.28318; // 2 * PI
     
-    // Apply a high-frequency, organic "jitter"
-    // The CPU handles the massive paradox shape. The GPU makes it look "alive."
-    float noise_intensity = 40.0; // How violently they vibrate
+    // THE FIX: Crank the vibration intensity to 800!
+    // Now you will SEE the GPU working without having to click.
+    float noise_intensity = 800.0; 
     pos.x += sin(pc.time * 12.0 + uniqueOffset) * noise_intensity;
     pos.y += cos(pc.time * 10.0 + uniqueOffset) * noise_intensity;
     pos.z += sin(pc.time * 14.0 + uniqueOffset) * noise_intensity;
