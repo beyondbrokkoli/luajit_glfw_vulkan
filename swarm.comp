@@ -1,3 +1,4 @@
+// swarm.comp
 #version 450
 
 layout(local_size_x = 256) in;
@@ -6,13 +7,19 @@ struct Particle {
     float x, y, z, pad; 
 };
 
+// BINDING 0: Read the Smale's Paradox math from the CPU (via ReBAR)
 layout(std430, binding = 0) readonly buffer InSwarm { Particle inParticles[]; };
+
+// BINDING 1: Write the "Decorated" result for the Rasterizer
 layout(std430, binding = 1) writeonly buffer OutSwarm { Particle outParticles[]; };
 
+// THE CRITICAL FIX: Match the 20-byte C Struct exactly!
 layout(push_constant) uniform PushConstants {
-    float dt;
-    float time;
-    int state;
+    float dt;    // Offset 0
+    float time;  // Offset 4
+    int state;   // Offset 8
+    int push;    // Offset 12 (Left Click)
+    int pull;    // Offset 16 (Right Click)
 } pc;
 
 uint pcg_hash(uint seed) {
@@ -25,31 +32,33 @@ void main() {
     uint id = gl_GlobalInvocationID.x;
     if (id >= 2500000) return;
 
+    // 1. Start with the CPU's raw mathematical position
     vec3 pos = vec3(inParticles[id].x, inParticles[id].y, inParticles[id].z);
 
+    // 2. GPU Decoration: High-frequency "Vibration" or Noise
+    // We use the ID and time to create a unique wobble for every particle
     uint h = pcg_hash(id);
-    float rand1 = float(h & 0xFFFF) / 65535.0;         
-    float rand2 = float((h >> 16) & 0xFFFF) / 65535.0; 
-
+    float rand1 = float(h & 0xFFFF) / 65535.0;
     float uniqueOffset = rand1 * 6.28318;
-    float speed = 0.5 + rand2 * 1.5;
-    float t = pc.time * speed + uniqueOffset;
+    
+    // Add a tiny trigonometric jitter that only the GPU can do efficiently
+    float intensity = 15.0; 
+    pos.x += sin(pc.time * 3.0 + uniqueOffset) * intensity;
+    pos.y += cos(pc.time * 2.5 + uniqueOffset) * intensity;
+    pos.z += sin(pc.time * 4.0 + uniqueOffset) * intensity;
 
-    // THE FIX: Massive VibeEngine Scale Multipliers!
-    vec3 target = vec3(
-        sin(t) * 10000.0,
-        cos(t * 0.8) * 5000.0,
-        sin(t * 1.2) * 10000.0
-    );
-
-    if (pc.state == 1 && (id % 10 == 0)) {
-        target = vec3(15000.0, 5000.0, 0.0);
-        target.y += sin(pc.time * 5.0 - float(id)) * 4000.0;
+    // 3. Interactive Physics (The Mouse Hooks)
+    // Left-Click: Expand the paradox structure outward
+    if (pc.push == 1) {
+        pos *= 1.1; 
+    }
+    
+    // Right-Click: Pull everything toward the center (Vortex mode)
+    if (pc.pull == 1) {
+        pos *= 0.9;
     }
 
-    // Fast Lerp
-    pos += (target - pos) * pc.dt * 2.0;
-
+    // 4. Final Output
     outParticles[id].x = pos.x;
     outParticles[id].y = pos.y;
     outParticles[id].z = pos.z;

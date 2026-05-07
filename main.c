@@ -813,37 +813,42 @@ int main() {
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         pfn_vkBeginCommandBuffer(cmd, &beginInfo);
 
-        // ----------------------------------------------------
-        // PASS A: COMPUTE SHADER (The Simulation Pass)
-        // ----------------------------------------------------
+        // ========================================================
+        // PASS A: COMPUTE SHADER (Simulation / Decoration)
+        // ========================================================
+        // We only run the GPU simulation if we aren't forcing a specific static buffer.
         if (g_force_draw_buffer == -1) {
             pfn_vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, g_compPipeline);
 
+            // Ping-Pong: One set reads A/writes B, the other reads B/writes A.
+            // In TRIPLE BUFFER mode, both sets read from SwarmCPU (Binding 0)
+            // and write to either Ping or Pong (Binding 1).
             VkDescriptorSet currentSet = (frameIndex % 2 == 0) ? g_compSet0 : g_compSet1;
             pfn_vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, g_compLayout, 0, 1, &currentSet, 0, NULL);
 
-            // 1. Fill the SIMULATION mailbox (20 bytes)
-            ComputePushConstants sim_pc; // Call it sim_pc to avoid confusion with the camera!
+            // 1. Push SIMULATION data (20 bytes) to the COMPUTE stage
+            ComputePushConstants sim_pc;
             sim_pc.dt    = g_comp_dt;
             sim_pc.time  = g_comp_time;
             sim_pc.state = g_comp_state;
             sim_pc.push  = g_comp_push;
             sim_pc.pull  = g_comp_pull;
 
-            // 2. Push to the COMPUTE stage using the COMPUTE layout
             pfn_vkCmdPushConstants(cmd, g_compLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(sim_pc), &sim_pc);
 
+            // 2. Dispatch the GPU threads
             uint32_t groupCount = (g_draw_count + 255) / 256;
             if (groupCount == 0) groupCount = 1;
             pfn_vkCmdDispatch(cmd, groupCount, 1, 1);
 
+            // 3. Sync: Ensure GPU finishes writing before the Rasterizer tries to read
             VkMemoryBarrier memBarrier = {0};
             memBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
             memBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
             memBarrier.dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
 
             pfn_vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
-                                 0, 1, &memBarrier, 0, NULL, 0, NULL);
+                                     0, 1, &memBarrier, 0, NULL, 0, NULL);
         }
 
         // ----------------------------------------------------
