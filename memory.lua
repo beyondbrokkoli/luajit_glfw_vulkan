@@ -167,11 +167,15 @@ function Memory.Init(vulkan_lib, core_state, use_avx2)
     vk = vulkan_lib
     print("[MEMORY] Initializing Unified Memory Manager...")
 
-    -- A. ALLOCATE VRAM
--- A. ALLOCATE VRAM
-    Memory.CreateHostVisibleBuffer("SwarmCPU", "GPU_VertexAoS", MAX_OBJS, 160, core_state) -- The new CPU Input
-    Memory.CreateHostVisibleBuffer("SwarmPing", "GPU_VertexAoS", MAX_OBJS, 160, core_state) -- Old SwarmA
-    Memory.CreateHostVisibleBuffer("SwarmPong", "GPU_VertexAoS", MAX_OBJS, 160, core_state) -- Old SwarmB
+    -- A. ALLOCATE VRAM (The Quad-Buffer Assembly Line)
+    -- CPU Ping-Pong Buffers
+    Memory.CreateHostVisibleBuffer("SwarmCPU_A", "GPU_VertexAoS", MAX_OBJS, 160, core_state)
+    Memory.CreateHostVisibleBuffer("SwarmCPU_B", "GPU_VertexAoS", MAX_OBJS, 160, core_state)
+    
+    -- GPU Ping-Pong Buffers
+    Memory.CreateHostVisibleBuffer("SwarmPing", "GPU_VertexAoS", MAX_OBJS, 160, core_state) 
+    Memory.CreateHostVisibleBuffer("SwarmPong", "GPU_VertexAoS", MAX_OBJS, 160, core_state) 
+    
     Memory.CreateHostVisibleBuffer("Cage", "GPU_GlobalCage", 1, 16, core_state)
 
     -- B. ALLOCATE CPU RAM (Always required for seeding the universe!)
@@ -196,7 +200,6 @@ function Memory.Init(vulkan_lib, core_state, use_avx2)
         pcall(function() Memory.RenderStruct[array_name] = array_ptr end)
     end
 end
-
 function Memory.Destroy(vk, core_state)
     print("[TEARDOWN] Deconstructing VRAM Buffers...")
     for name, buffer in pairs(Memory.Buffers) do

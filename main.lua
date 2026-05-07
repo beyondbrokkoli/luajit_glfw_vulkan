@@ -1,9 +1,9 @@
 local ffi = require("ffi")
-local DebugProxy = require("debug_proxy") 
+local DebugProxy = require("debug_proxy")
 local vk_core = require("vulkan_core")
 local camera_math = require("camera")
 
--- The Engine table holds all Lua-side state. (This was missing!)
+-- The Engine table holds all Lua-side state.
 Engine = {
     Resize = { is_resizing = false, timer = 0.0, cooldown = 0.25, new_width = 0, new_height = 0 },
     vk_context = nil, vk_swapchain = nil, vk_graphics = nil, vk_compute = nil, vk_descriptors = nil,
@@ -24,6 +24,7 @@ VibeMath = ffi.load(jit.os == "Windows" and "vibemath" or "./libvibemath.so")
 Config = {
     physics_mode = "HYBRID" -- We have ascended.
 }
+
 -- ========================================================
 -- PILLAR 3: THE C-BRIDGE (Injected by main.c)
 -- ========================================================
@@ -62,13 +63,7 @@ local cam_state = camera_math.create_state()
 local success, vk = pcall(ffi.load, "vulkan-1")
 if not success then success, vk = pcall(ffi.load, "vulkan") end
 
-local function ptr2str(ptr)
-    if ptr == nil then return "0" end
-    local cdata_num = ffi.cast("uint64_t", ffi.cast("uintptr_t", ptr))
-    return string.match(tostring(cdata_num), "%d+")
-end
-
--- 3. THE 64-BIT CONVERTER
+-- THE 64-BIT CONVERTER
 local function ptr2str(ptr)
     if ptr == nil then return "0" end
     local cdata_num = ffi.cast("uint64_t", ffi.cast("uintptr_t", ptr))
@@ -122,10 +117,11 @@ function love_load()
     local use_avx2 = (Config.physics_mode == "CPU_AVX2" or Config.physics_mode == "HYBRID")
     memory.Init(vk, Engine.vk_context, use_avx2)
 
-    -- Setup Descriptors with the Triple Buffer layout
+    -- Setup Descriptors with the Quad-Buffer layout
     Engine.vk_descriptors = descriptors.Init(
         vk, Engine.vk_context.device,
-        memory.Buffers["SwarmCPU"],
+        memory.Buffers["SwarmCPU_A"],
+        memory.Buffers["SwarmCPU_B"],
         memory.Buffers["SwarmPing"],
         memory.Buffers["SwarmPong"]
     )
@@ -134,18 +130,20 @@ function love_load()
     local win_width, win_height = C_Bridge.getWindowSize()
     ExecuteVulkanRebuild(win_width, win_height, true)
 
-    -- Handoff 6 GPU Pointers to C
+    -- Handoff 8 GPU Pointers to C
     C_Bridge.submit_buffers(
-        ptr2str(memory.Buffers["SwarmCPU"]), ptr2str(memory.Buffers["SwarmPing"]), ptr2str(memory.Buffers["SwarmPong"]),
-        ptr2str(memory.Mapped["SwarmCPU"]), ptr2str(memory.Mapped["SwarmPing"]), ptr2str(memory.Mapped["SwarmPong"])
+        ptr2str(memory.Buffers["SwarmCPU_A"]), ptr2str(memory.Buffers["SwarmCPU_B"]),
+        ptr2str(memory.Buffers["SwarmPing"]), ptr2str(memory.Buffers["SwarmPong"]),
+        ptr2str(memory.Mapped["SwarmCPU_A"]), ptr2str(memory.Mapped["SwarmCPU_B"]),
+        ptr2str(memory.Mapped["SwarmPing"]), ptr2str(memory.Mapped["SwarmPong"])
     )
 
-    -- The CPU ALWAYS writes to SwarmCPU now. Never Ping/Pong.
-    VibeMath.vmath_bind_vulkan_buffers(memory.Mapped["SwarmCPU"], nil)
+    -- Bind Buffer A initially to give C a valid target before the first frame
+    VibeMath.vmath_bind_vulkan_buffers(memory.Mapped["SwarmCPU_A"], nil)
     VibeMath.vmath_bind_engine(memory.RenderStruct, nil, nil)
 
-    -- Scatter the particles across the 20,000x20,000 universe so they don't start at (0,0,0)
-    VibeMath.vmath_seed_swarm(2500000) 
+    -- Scatter the particles across the 20,000x20,000 universe
+    VibeMath.vmath_seed_swarm(2500000)
     print("[INIT] VRAM Seeded with 2.5M Particles.")
 
     if use_avx2 then
@@ -166,6 +164,7 @@ function love_resize_trigger(w, h)
     Engine.Resize.new_width = w
     Engine.Resize.new_height = h
 end
+
 local frame_count = 0
 function love_update(dt)
     if Engine.Resize.is_resizing then
@@ -177,7 +176,7 @@ function love_update(dt)
         return false
     end
 
-    dt = math.min(dt, 0.033) 
+    dt = math.min(dt, 0.033)
     Engine.Time = Engine.Time + dt
     frame_count = frame_count + 1
 
@@ -207,48 +206,52 @@ function love_update(dt)
     local pull_active = love.mouse.isDown(2) and 1 or 0
 
     -- ====================================================
-    -- THE HYBRID TRAFFIC COP
+    -- THE QUAD-BUFFER TRAFFIC COP
     -- ====================================================
-    -- 1. CPU ALWAYS computes the base physics into SwarmCPU
     local mem = memory.RenderStruct
     mem.Swarm_State = Engine.SwarmState
     mem.Swarm_GravityBlend = Engine.GravityBlend
     mem.Swarm_MetalBlend = Engine.MetalBlend
     mem.Swarm_ParadoxBlend = Engine.ParadoxBlend
 
+    -- 1. Flip the CPU Pointer! (Even frame = A, Odd frame = B)
+    local active_cpu_idx = frame_count % 2
+    local target_cpu_mapped = (active_cpu_idx == 0) and memory.Mapped["SwarmCPU_A"] or memory.Mapped["SwarmCPU_B"]
+    
+    -- 2. Inject the active ReBAR pointer into C
+    VibeMath.vmath_bind_vulkan_buffers(target_cpu_mapped, nil)
+
+    -- 3. AVX2 Computes the base physics into the active pointer
     VibeMath.vmath_step_swarm(Engine.DrawCount, Engine.Time, dt, Engine.SwarmState, push_active, pull_active)
 
     if Config.physics_mode == "HYBRID" then
-        -- 2a. HYBRID MODE: Dispatch GPU Compute to read SwarmCPU, add noise, and write to Ping/Pong
+        -- Tell Compute Shader to read CPU data, add noise, and write to Ping/Pong
         C_Bridge.set_compute_push_constants(dt, Engine.Time, Engine.SwarmState, push_active, pull_active)
 
         -- Tell Rasterizer to draw the GPU's finished Ping/Pong buffer (-1)
         C_Bridge.set_active_buffer(-1)
 
     elseif Config.physics_mode == "CPU_AVX2" then
-        -- 2b. PURE CPU MODE: Skip the GPU Compute Shader entirely!
-        -- Tell Rasterizer to draw the raw ReBAR SwarmCPU buffer directly (2)
+        -- Tell Rasterizer to draw the raw ReBAR CPU buffer directly (2)
+        -- main.c uses frameIndex to natively pick SwarmCPU_A or SwarmCPU_B!
         C_Bridge.set_active_buffer(2)
     end
 
-    -- Update Camera & Matrices
+    -- Update Camera & Matrices (Cleaned up duplicate calls!)
     camera_math.apply_movement(cam_state, dt)
     camera_math.build_matrix(cam_state, Engine.vk_swapchain.extent.width, Engine.vk_swapchain.extent.height)
 
-    -- Update Camera & Matrices
-    camera_math.apply_movement(cam_state, dt)
-    camera_math.build_matrix(cam_state, Engine.vk_swapchain.extent.width, Engine.vk_swapchain.extent.height)
-
-    -- The clean, stable way! (unpack naturally handles 1-indexed Lua tables)
+    -- The clean, stable way!
     C_Bridge.setCameraMatrix(unpack(cam_state.mat))
 
     C_Bridge.set_draw_count(Engine.DrawCount)
     return true
 end
+
 function love_mousemoved(x, y, dx, dy)
-    -- Lua only cares about the dx/dy deltas calculated in C
     camera_math.apply_look(cam_state, dx, dy)
 end
+
 function love_keypressed(key)
     if key == 256 then -- Escape
         print("[LUA] Escape detected. Signaling C to stop the loop...")
@@ -263,6 +266,7 @@ function love_keypressed(key)
         end
     end
 end
+
 function love_quit()
     print("\n[SHUTDOWN] Initiating Safe Teardown...")
     local device = Engine.vk_context.device
@@ -273,7 +277,7 @@ function love_quit()
     compute_pipeline.Destroy(vk, Engine.vk_context, Engine.vk_compute)
     swapchain.Destroy(vk, Engine.vk_context, Engine.vk_swapchain)
 
-    -- 2. Descriptors (This handles the Pool and Layouts that were leaking)
+    -- 2. Descriptors 
     if descriptors.Destroy then
         descriptors.Destroy(vk, device, Engine.vk_descriptors)
     end
